@@ -1,0 +1,24 @@
+rest {
+    connect_uri = "http://fastapi:8000"
+
+    authorize {
+        uri     = "${..connect_uri}/authorize"
+        method  = 'post'
+        body    = 'json'
+        # method: policy-soc'ta rest.authorize'dan önce control:Tmp-String-0'a
+        # yazılıyor ("vpn" ya da "eap-tls"). cert_valid: post-auth'a
+        # ulaşıldığı için kimlik zaten doğrulanmış demektir -> true.
+        data    = '{"username": "%{User-Name}", "method": "%{control:Tmp-String-0}", "source_ip": "%{Packet-Src-IP-Address}", "cert_valid": true}'
+    }
+
+    pool {
+        start        = 5
+        min          = 4
+        max          = 10
+        spare        = 3
+        uses         = 0
+        retry_delay  = 30
+        lifetime     = 86400
+        idle_timeout = 60
+    }
+}

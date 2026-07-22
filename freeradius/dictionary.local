@@ -1,0 +1,8 @@
+# FastAPI Policy Engine'in /authorize yanıtındaki
+# control:SOC-* alanlarının rlm_rest tarafından otomatik olarak
+# attribute'a eşlenebilmesi için özel tanımlar.
+
+ATTRIBUTE   SOC-Result    3000   string
+ATTRIBUTE   SOC-Profile   3001   string
+ATTRIBUTE   SOC-Vlan      3002   integer
+ATTRIBUTE   SOC-Reason    3003   string

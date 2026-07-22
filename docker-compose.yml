@@ -1,0 +1,83 @@
+version: "3.9"
+
+networks:
+  dmz_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+          gateway: 192.168.100.1
+  internal_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.101.0/24
+          gateway: 192.168.101.1
+
+services:
+  # ---------------- DMZ ----------------
+  vpn-gateway:
+    build: ./vpn
+    container_name: vpn-gateway
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    ports:
+      - "1194:1194/udp"
+    networks:
+      dmz_net:
+        ipv4_address: 192.168.100.10
+      internal_net:
+        ipv4_address: 192.168.101.14   # sadece RADIUS'a (1812/udp) erişim için
+
+  web-vuln:
+    build: ./web
+    container_name: web-vuln
+    networks:
+      dmz_net:
+        ipv4_address: 192.168.100.11
+    ports:
+      - "8080:80"
+
+  # ---------------- INTERNAL ----------------
+  freeradius:
+    build: ./freeradius
+    container_name: freeradius
+    command: ["freeradius", "-X"]   # GEÇİCİ: debug modu, test bitince kaldır
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    networks:
+      internal_net:
+        ipv4_address: 192.168.101.10
+
+  postgres:
+    build: ./postgres
+    container_name: postgres
+    networks:
+      internal_net:
+        ipv4_address: 192.168.101.11
+    environment:
+      POSTGRES_DB: soc_db
+      POSTGRES_USER: soc_user
+      POSTGRES_PASSWORD: changeme   # sonra .env'e taşınacak
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks:
+      internal_net:
+        ipv4_address: 192.168.101.12
+
+  fastapi:
+    build: ./fastapi
+    container_name: fastapi
+    networks:
+      internal_net:
+        ipv4_address: 192.168.101.13
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"   # sadece test/geliştirme amaçlı - internal_net normalde dışa kapalı

@@ -1,0 +1,21 @@
+# Test/lab amaçlı kullanıcılar. Gerçek profil kararı (admin/employee/guest)
+# ileride FastAPI Policy Engine'e rlm_rest ile devredilecek (bkz. AŞAMA 1).
+# Şimdilik statik örnekler:
+
+testadmin   Cleartext-Password := "changeme"
+            Reply-Message = "Profile: admin",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "10"
+
+testemployee Cleartext-Password := "changeme"
+            Reply-Message = "Profile: employee",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "20"
+
+testguest   Cleartext-Password := "changeme"
+            Reply-Message = "Profile: guest",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "30"

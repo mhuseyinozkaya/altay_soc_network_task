@@ -1,0 +1,46 @@
+soc_policy_engine {
+    if (reply:Packet-Type == "Access-Accept") {
+        # method belirleme: %{Attr:-default} sözdizimi bu FreeRADIUS
+        # sürümünde "Unknown module" hatası verdiği için düz if/else
+        # kullanılıyor, sonucu Tmp-String-0'a yazıp mods-rest'te
+        # onu referans gösteriyoruz.
+        if (&NAS-Identifier && &NAS-Identifier == "vpn") {
+            update control {
+                &Tmp-String-0 := "vpn"
+            }
+        }
+        else {
+            update control {
+                &Tmp-String-0 := "eap-tls"
+            }
+        }
+
+        rest.authorize
+        if (ok || updated) {
+            # rest.authorize'ın "ok" olması sadece HTTP isteğinin
+            # başarılı olduğunu gösterir - asıl kararı SOC-Result
+            # attribute'undan (FastAPI'nin iş mantığı sonucu) okuyoruz.
+            if (&control:SOC-Result == "success") {
+                update reply {
+                    Tunnel-Type             := VLAN
+                    Tunnel-Medium-Type      := IEEE-802
+                    Tunnel-Private-Group-Id := "%{control:SOC-Vlan}"
+                    Reply-Message           := "profile=%{control:SOC-Profile}"
+                }
+            }
+            else {
+                update reply {
+                    Reply-Message := "Policy Engine reddetti: %{control:SOC-Reason}"
+                }
+                reject
+            }
+        }
+        else {
+            # FastAPI'ye hiç ulaşılamadı (bağlantı hatası vb.)
+            update reply {
+                Reply-Message := "Policy Engine'e ulasilamadi"
+            }
+            reject
+        }
+    }
+}
