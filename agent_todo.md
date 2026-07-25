@@ -485,3 +485,45 @@ active-response), quarantine VLAN (bonus), security_actions tablosuna
 yazma, secrets'ların .env'e taşınması, freeradius debug modunun (-X)
 normal moda geri alınması (docker-compose.yml'deki command satırı
 kaldırılmalı - artık ana sorunlar çözüldüğü için debug modu kapatılabilir).
+
+---
+- SENARYO GÜNCELLENDİ: "Kurumsal ağ" hikayesi netleştirildi - siber
+  güvenlik danışmanlığı yapan bir firma. DMZ'deki web-vuln makinesi tam
+  ele geçirilebilir (upload zafiyeti + SUID privesc), ama DMZ izolasyonu
+  sayesinde iç ağa sıçrama olmuyor (bu bir eksiklik değil, segmentasyon
+  testinin PASS etmesi - AŞAMA 2'nin son maddesiyle tutarlı). Şirket
+  çalışanları RADIUS ile (yerelde EAP-TLS, uzaktan VPN) kimlik
+  doğrulayıp profil/VLAN'a göre iç ağ verilerine erişiyor - bu kısım
+  zaten mevcut mimariyle (FreeRADIUS+FastAPI Policy Engine) birebir
+  örtüşüyor, ek değişiklik gerekmedi.
+
+- web-vuln'a SUID privilege escalation senaryosu eklendi:
+  - web/contact-writer.c (YENİ): "iletişim" verilerini root'a ait,
+    www-data'nın okuyamadığı bir dosyaya yazan setuid-root binary.
+    KASITLI ZAFİYET: system() çağrısı "logger" komutunu tam yol
+    vermeden çalıştırıyor (PATH hijacking) - saldırgan upload açığıyla
+    RCE aldıktan sonra kendi "logger" script'ini PATH'e sokup bu
+    setuid-root binary'yi çağırarak root olabilir (klasik SUID PATH
+    hijacking egzersizi, standart güvenlik eğitim materyali).
+  - web/contact.php (YENİ): iletişim formu, contact-writer'ı exec()
+    ile çağırıyor.
+  - web/index.php: iletişim formu eklendi (isim/email/mesaj).
+  - web/Dockerfile: gcc+musl-dev kuruldu, contact-writer.c derlenip
+    root:root sahipliğiyle 4755 (setuid) yapıldı. /var/lib/webapp/
+    contacts.db oluşturuldu (sahte/demo 2 kayıt), root:root + mode 600
+    (www-data doğrudan okuyamaz, sadece privesc sonrası root okuyabilir).
+
+  Beklenen Red Team akışı: upload.php açığıyla shell.php çalıştır ->
+  `find / -perm -4000` ile contact-writer'ı bul -> uploads/ dizinine
+  kötü amaçlı "logger" script koy -> PATH=/var/www/html/uploads:$PATH
+  ile contact-writer'ı çağır -> root ol -> /var/lib/webapp/contacts.db
+  ve sistemin geri kalanını oku. DMZ izolasyonu sayesinde bu noktadan
+  internal_net'e (postgres/freeradius/fastapi) erişim YOK - bu
+  beklenen/istenen sonuç.
+
+  Henüz test edilmedi: gcc'nin alpine üzerinde php7-fpm ile aynı
+  image'da sorunsuz derleme yapıp yapmadığı, contact.php'nin PHP'nin
+  exec() fonksiyonunun disabled_functions'ta olup olmadığı (alpine
+  php7 varsayılanında genelde açık ama doğrulanmalı), SUID
+  senaryosunun gerçekten uçtan uca (upload -> PATH hijack -> root)
+  çalıştığı.
