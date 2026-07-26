@@ -9,8 +9,19 @@
 # loglamak.
 
 RADIUS_HOST="192.168.101.10"
-RADIUS_SECRET="changeme_shared_secret"   # clients.conf/dmz_network ile aynı
-VPN_TEST_PASSWORD="changeme"             # freeradius/users ile aynı (lab/test)
+
+# Secrets container'ın ortam değişkenlerinden DEĞİL, entrypoint.sh'nin
+# yazdığı dosyadan okunuyor - OpenVPN'in client-connect subprocess'i
+# container'ın tam ortamını miras almıyor (bkz. entrypoint.sh).
+SECRETS_FILE="/etc/openvpn/radius-secrets.env"
+if [ -f "$SECRETS_FILE" ]; then
+    . "$SECRETS_FILE"
+fi
+
+: "${RADIUS_SHARED_SECRET:?RADIUS_SHARED_SECRET tanimli degil (secrets dosyasi bulunamadi - entrypoint.sh calismamis olabilir)}"
+: "${VPN_RADIUS_SERVICE_SECRET:?VPN_RADIUS_SERVICE_SECRET tanimli degil}"
+RADIUS_SECRET="$RADIUS_SHARED_SECRET"
+VPN_TEST_PASSWORD="$VPN_RADIUS_SERVICE_SECRET"
 
 if [ -z "$common_name" ]; then
     echo "client-connect: common_name bulunamadi, reddediliyor"

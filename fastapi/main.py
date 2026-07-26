@@ -26,6 +26,7 @@ class AuthRequest(BaseModel):
     method: str          # "vpn" | "eap-tls"
     source_ip: str
     cert_valid: bool = True   # EAP-TLS ise sertifika doğrulama sonucu (üst katmanda kontrol edilir)
+    cert_serial: str | None = None  # EAP-TLS: TLS-Client-Cert-Serial (varsa iptal kontrolü için)
 
 
 class AuthResponse(BaseModel):
@@ -49,6 +50,21 @@ def radius_response(result: str, profile: str = "", vlan: int = 0, reason: str =
 
 def get_db():
     return psycopg.connect(DB_DSN)
+
+
+def certificate_revocation_status(serial: str) -> bool | None:
+    """certificates tablosunda serial_number'a göre iptal durumunu döner.
+    Kayıt bulunamazsa None döner (sertifika Postgres'e henüz kaydedilmemiş -
+    bkz. vpn/make-client.sh; production'da bu durumda da reddetmek daha
+    güvenlidir, ama lab ortamında sert reddetmiyoruz)."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT revoked FROM certificates WHERE serial_number = %s",
+                (serial,),
+            )
+            row = cur.fetchone()
+    return None if row is None else bool(row[0])
 
 
 def is_rate_limited(source_ip: str) -> bool:
@@ -97,6 +113,21 @@ def authorize(req: AuthRequest):
         log_event(req.username, req.method, "failure", None, None,
                    req.source_ip, "invalid_certificate")
         return radius_response("failure", reason="invalid_certificate")
+
+    # 2b) EAP-TLS: sertifika iptal edilmiş mi? (certificates.revoked)
+    # TLS handshake sertifikanın geçerliliğini/imzasını zaten doğruladı,
+    # ama iptal (revocation) durumunu FreeRADIUS/OpenSSL katmanı kontrol
+    # etmiyor (bkz. freeradius/eap.conf notu) - bu kontrol burada, merkezi
+    # Postgres kaydı üzerinden yapılıyor.
+    if req.method == "eap-tls" and req.cert_serial:
+        revoked = certificate_revocation_status(req.cert_serial)
+        if revoked is True:
+            register_failure(req.source_ip)
+            log_event(req.username, req.method, "failure", None, None,
+                       req.source_ip, "certificate_revoked")
+            return radius_response("failure", reason="certificate_revoked")
+        # revoked is None -> sertifika henüz certificates tablosuna
+        # kaydedilmemiş; şimdilik reddetmiyoruz, sadece not düşüyoruz.
 
     # 3) Kullanıcıyı Postgres'te ara
     with get_db() as conn:

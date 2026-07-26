@@ -19,6 +19,7 @@ services:
   vpn-gateway:
     build: ./vpn
     container_name: vpn-gateway
+    env_file: .env
     cap_add:
       - NET_ADMIN
     devices:
@@ -44,7 +45,8 @@ services:
   freeradius:
     build: ./freeradius
     container_name: freeradius
-    command: ["freeradius", "-X"]   # GEÇİCİ: debug modu, test bitince kaldır
+    env_file: .env
+    command: ["freeradius", "-X"]   # GEÇİCİ: debug modu, test bitince kaldır (bkz. README Bölüm 6, madde 7)
     depends_on:
       fastapi:
         condition: service_healthy
@@ -55,13 +57,10 @@ services:
   postgres:
     build: ./postgres
     container_name: postgres
+    env_file: .env
     networks:
       internal_net:
         ipv4_address: 192.168.101.11
-    environment:
-      POSTGRES_DB: soc_db
-      POSTGRES_USER: soc_user
-      POSTGRES_PASSWORD: changeme   # sonra .env'e taşınacak
 
   redis:
     image: redis:7-alpine
@@ -73,6 +72,8 @@ services:
   fastapi:
     build: ./fastapi
     container_name: fastapi
+    environment:
+      DB_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     networks:
       internal_net:
         ipv4_address: 192.168.101.13

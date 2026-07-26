@@ -8,7 +8,7 @@ client localhost {
 client dmz_network {
     ipaddr          = 192.168.100.0/24
     proto           = *
-    secret          = changeme_shared_secret   # .env / secrets'a taşınacak
+    secret          = ${RADIUS_SHARED_SECRET}
     require_message_authenticator = yes
     nas_type        = other
 }
@@ -16,7 +16,7 @@ client dmz_network {
 client internal_network {
     ipaddr          = 192.168.101.0/24
     proto           = *
-    secret          = changeme_shared_secret
+    secret          = ${RADIUS_SHARED_SECRET}
     require_message_authenticator = yes
     nas_type        = other
 }

@@ -15,6 +15,13 @@ soc_policy_engine {
             }
         }
 
+        # Gerçek EAP-TLS oturumunda rlm_eap_tls bu attribute'u doldurur;
+        # PAP/radtest veya VPN akışında boş kalır (FastAPI bu durumda
+        # iptal kontrolünü atlar, bkz. main.py).
+        update control {
+            &Tmp-String-1 := "%{TLS-Client-Cert-Serial}"
+        }
+
         rest.authorize
         if (ok || updated) {
             # rest.authorize'ın "ok" olması sadece HTTP isteğinin

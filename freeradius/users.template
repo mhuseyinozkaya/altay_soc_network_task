@@ -1,0 +1,29 @@
+# Test/lab amaçlı kullanıcılar. Gerçek profil kararı (admin/employee/guest)
+# FastAPI Policy Engine'e (rlm_rest) devredildi (bkz. policy-soc).
+#
+# ÖNEMLİ - VPN_RADIUS_SERVICE_SECRET burada bir "kullanıcı şifresi" değildir:
+# gerçek EAP-TLS akışında kimlik doğrulama TAMAMEN istemci sertifikasıyla
+# (+ Postgres üzerinden iptal kontrolüyle) yapılır. Bu Cleartext-Password
+# yalnızca PAP/radtest testinde ve VPN akışında (client-connect.sh, cert
+# zaten OpenVPN tarafından doğrulanmış olduktan sonra) FreeRADIUS'a
+# dahili bir servis kimlik bilgisi olarak gönderilir; tüm test kullanıcıları
+# için ortak, .env üzerinden yönetilen bir değerdir (entrypoint.sh ile
+# bu şablona enjekte edilir).
+
+testadmin   Cleartext-Password := "${VPN_RADIUS_SERVICE_SECRET}"
+            Reply-Message = "Profile: admin",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "10"
+
+testemployee Cleartext-Password := "${VPN_RADIUS_SERVICE_SECRET}"
+            Reply-Message = "Profile: employee",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "20"
+
+testguest   Cleartext-Password := "${VPN_RADIUS_SERVICE_SECRET}"
+            Reply-Message = "Profile: guest",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "30"

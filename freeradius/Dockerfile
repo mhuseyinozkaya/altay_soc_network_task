@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     freeradius-utils \
     freeradius-rest \
     openssl \
+    gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
 # Kendi imzalı CA + server sertifikası (test/lab amaçlı).
@@ -12,9 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /etc/freeradius/3.0/certs
 RUN make all 2>/dev/null || true
 
-COPY clients.conf /etc/freeradius/3.0/clients.conf
+# NOT: clients.conf ve users artık şablon (.template) olarak kopyalanıyor;
+# içindeki ${RADIUS_SHARED_SECRET} / ${VPN_RADIUS_SERVICE_SECRET} değerleri
+# entrypoint.sh tarafından container başlarken .env'den enjekte edilir.
+COPY clients.conf.template /etc/freeradius/3.0/clients.conf.template
+COPY users.template /etc/freeradius/3.0/users.template
 COPY eap.conf /etc/freeradius/3.0/mods-available/eap
-COPY users /etc/freeradius/3.0/users
 
 # --- rlm_rest: FastAPI Policy Engine entegrasyonu ---
 COPY mods-rest /etc/freeradius/3.0/mods-available/rest
@@ -33,6 +37,10 @@ RUN sed -i '0,/post-auth {/s//post-auth {\n\tsoc_policy_engine/' \
 
 RUN chown -R freerad:freerad /etc/freeradius/3.0
 
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 1812/udp 1813/udp
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["freeradius", "-f", "-l", "stdout"]
