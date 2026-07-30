@@ -1,9 +1,10 @@
+import json
 import os
 from datetime import datetime, timezone
 
 import psycopg
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI(title="SOC Policy Engine")
@@ -14,6 +15,12 @@ DB_DSN = os.environ.get(
 )
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+
+# --- Wazuh entegrasyonu ---
+AUDIT_LOG_PATH = "/var/log/soc/auth_events.log"
+INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
+QUARANTINE_MODE = os.environ.get("QUARANTINE_MODE", "block")  # "block" | "quarantine"
+QUARANTINE_TTL_SECONDS = int(os.environ.get("QUARANTINE_TTL_SECONDS", "600"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -98,9 +105,56 @@ def log_event(username, method, result, profile, vlan, source_ip, reason):
             )
         conn.commit()
 
+    # Wazuh'un tail ettiği kaynak - Postgres'e ek olarak aynı olayı JSON
+    # satırı olarak da yazıyoruz (bkz. wazuh/manager/config/local_rules.xml,
+    # fastapi/ossec-agent.conf: log_format=json).
+    try:
+        os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
+        event = {
+            "event_id": "soc_auth_event",
+            "username": username,
+            "method": method,
+            "result": result,
+            "profile": profile,
+            "vlan": vlan,
+            "source_ip": source_ip,
+            "reason": reason,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(event) + "\n")
+    except OSError:
+        # Audit log yazılamazsa akışı durdurmuyoruz (Postgres asıl kaynak);
+        # sadece Wazuh görünürlüğü kaybolur.
+        pass
+
+
+def is_quarantined(source_ip: str) -> bool:
+    return QUARANTINE_MODE == "quarantine" and r.get(f"quarantine:{source_ip}") is not None
+
+
+def quarantine_source(source_ip: str):
+    r.setex(f"quarantine:{source_ip}", QUARANTINE_TTL_SECONDS, "1")
+
+
+class SecurityActionRequest(BaseModel):
+    source_ip: str
+    username: str | None = None
+    action_type: str      # "block_ip" | "quarantine_vlan"
+    detail: str | None = None
+
 
 @app.post("/authorize")
 def authorize(req: AuthRequest):
+    # 0) Bonus: QUARANTINE_MODE=quarantine ise ve bu source_ip daha önce
+    # Wazuh tarafından karantinaya alındıysa, bağlantıyı kesmek yerine
+    # sabit karantina profiline/VLAN'ına yönlendir (bağlantıyı canlı tutar
+    # ama izole eder). block modunda bu kontrol hiç devrede değil.
+    if is_quarantined(req.source_ip):
+        log_event(req.username, req.method, "success", "quarantine", 99,
+                   req.source_ip, "quarantined")
+        return radius_response("success", profile="quarantine", vlan=99, reason="quarantined")
+
     # 1) Rate-limit kontrolü (Redis)
     if is_rate_limited(req.source_ip):
         log_event(req.username, req.method, "failure", None, None,
@@ -154,3 +208,29 @@ def authorize(req: AuthRequest):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "time": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/internal/security-action")
+def security_action(req: SecurityActionRequest, x_internal_token: str = Header(default="")):
+    # Wazuh active-response scriptleri (soc-block-radius.sh, soc-block-vpn.sh,
+    # soc-log-vpn-action.sh, soc-quarantine.sh) bu endpoint'i çağırıyor.
+    # Basit bir paylaşılan token ile korunuyor (bkz. .env: INTERNAL_TOKEN,
+    # wazuh-manager/freeradius/vpn-gateway ile aynı değer olmalı).
+    if not INTERNAL_TOKEN or x_internal_token != INTERNAL_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid internal token")
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO security_actions (target, action_type, detail)
+                VALUES (%s, %s, %s)
+                """,
+                (req.username or req.source_ip, req.action_type, req.detail),
+            )
+        conn.commit()
+
+    if req.action_type == "quarantine_vlan":
+        quarantine_source(req.source_ip)
+
+    return {"status": "recorded"}

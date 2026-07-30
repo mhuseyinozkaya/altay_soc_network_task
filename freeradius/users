@@ -1,0 +1,33 @@
+# Test/lab amaçlı kullanıcılar. Gerçek profil kararı (admin/employee/guest)
+# FastAPI Policy Engine'e (rlm_rest) devredildi (bkz. policy-soc).
+#
+# ÖNEMLİ - Cleartext-Password burada bir "kullanıcı şifresi" değildir:
+# gerçek EAP-TLS akışında kimlik doğrulama TAMAMEN istemci sertifikasıyla
+# (+ Postgres üzerinden iptal kontrolüyle) yapılır. Bu alan yalnızca
+# PAP/radtest testinde ve VPN akışında (client-connect.sh, cert zaten
+# OpenVPN tarafından doğrulanmış olduktan sonra) FreeRADIUS'a gönderilen
+# dahili bir servis kimlik bilgisidir.
+#
+# NOT: Bilinçli olarak hardcoded - vpn/client-connect.sh'teki
+# VPN_TEST_PASSWORD ile BİREBİR AYNI OLMALI (OpenVPN'in --client-connect
+# script'ine ana process'in .env değişkenlerini güvenilir şekilde
+# aktarmadığı görüldüğü için .env/entrypoint.sh şablon mekanizması bu
+# dosya için geri alındı - bkz. README Bölüm 6, madde 5/6).
+
+testadmin   Cleartext-Password := "changeme"
+            Reply-Message = "Profile: admin",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "10"
+
+testemployee Cleartext-Password := "changeme"
+            Reply-Message = "Profile: employee",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "20"
+
+testguest   Cleartext-Password := "changeme"
+            Reply-Message = "Profile: guest",
+            Tunnel-Type = VLAN,
+            Tunnel-Medium-Type = IEEE-802,
+            Tunnel-Private-Group-Id = "30"

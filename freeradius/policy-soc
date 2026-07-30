@@ -22,6 +22,25 @@ soc_policy_engine {
             &Tmp-String-1 := "%{TLS-Client-Cert-Serial}"
         }
 
+        # YENİ: FastAPI'ye/Wazuh'a bildirilecek "gerçek" kaynak IP.
+        # VPN akışında radclient çağrısını fiziksel olarak vpn-gateway
+        # container'ı yaptığı için Packet-Src-IP-Address her zaman
+        # vpn-gateway'in kendi IP'si olur - vpn/client-connect.sh artık
+        # gerçek istemci tünel IP'sini Calling-Station-Id olarak
+        # gönderiyor, o varsa onu kullanıyoruz. Access-Accept/Reject
+        # kararını ETKİLEMİYOR, sadece loglanan/raporlanan IP'yi
+        # düzeltiyor (Wazuh'un doğru bağlantıyı hedefleyebilmesi için).
+        if (&Calling-Station-Id) {
+            update control {
+                &Tmp-String-2 := "%{Calling-Station-Id}"
+            }
+        }
+        else {
+            update control {
+                &Tmp-String-2 := "%{Packet-Src-IP-Address}"
+            }
+        }
+
         rest.authorize
         if (ok || updated) {
             # rest.authorize'ın "ok" olması sadece HTTP isteğinin

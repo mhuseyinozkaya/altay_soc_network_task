@@ -1,0 +1,85 @@
+<ossec_config>
+  <!-- remoted: agent kayit sonrasi olay akisi (1514/udp) - agent'lar
+       (fastapi/freeradius/vpn-gateway ossec-agent.conf) ve docker-compose.yml
+       port eslemesi ("1514:1514/udp") bu degerlerle birebir uyusmali.
+       Bazi build senaryolarinda (ossec.conf /wazuh-config-mount yerine
+       build zamaninda COPY ile geldiginde) imajin varsayilan <remote>
+       blogu devreye girmiyor ve wazuh-remoted "Remoted connection is not
+       configured" hatasiyla cikiyor - bu yuzden acikca tanimliyoruz. -->
+  <remote>
+    <connection>secure</connection>
+    <port>1514</port>
+    <protocol>udp</protocol>
+    <queue_size>131072</queue_size>
+  </remote>
+
+  <!-- authd: agent kayıt (enrollment) sırasında şifre istesin -->
+  <auth>
+    <use_password>yes</use_password>
+  </auth>
+
+  <!-- Komut tanımları -->
+  <command>
+    <name>soc-block-radius</name>
+    <executable>soc-block-radius.sh</executable>
+    <timeout_allowed>yes</timeout_allowed>
+  </command>
+  <command>
+    <name>soc-block-vpn</name>
+    <executable>soc-block-vpn.sh</executable>
+    <timeout_allowed>yes</timeout_allowed>
+  </command>
+  <command>
+    <name>soc-log-vpn-action</name>
+    <executable>soc-log-vpn-action.sh</executable>
+    <timeout_allowed>no</timeout_allowed>
+  </command>
+  <command>
+    <name>soc-quarantine</name>
+    <executable>soc-quarantine.sh</executable>
+    <timeout_allowed>no</timeout_allowed>
+  </command>
+
+  <!-- ZORUNLU: Bağlantıyı doğrudan sonlandır (block modu).
+       location=all: manager bu komutu TÜM bağlı agent'lara gönderir,
+       ama soc-block-radius.sh sadece freeradius agent'ında,
+       soc-block-vpn.sh sadece vpn-gateway agent'ında mevcut - diğer
+       agent'larda (fastapi) "command not found" şeklinde zararsız bir
+       hata loglanır, engelleme sadece doğru yerde fiilen çalışır. -->
+  <active-response>
+    <disabled>__ENFORCE_DISABLED__</disabled>
+    <command>soc-block-radius</command>
+    <location>all</location>
+    <rules_group>soc_block_radius</rules_group>
+    <timeout>600</timeout>
+  </active-response>
+
+  <active-response>
+    <disabled>__ENFORCE_DISABLED__</disabled>
+    <command>soc-block-vpn</command>
+    <location>all</location>
+    <rules_group>soc_block_vpn</rules_group>
+    <timeout>600</timeout>
+  </active-response>
+
+  <!-- vpn-gateway'in fastapi'ye (internal_net) erisimi kasitli olarak
+       sadece RADIUS portlariyla sinirli (bkz. vpn/entrypoint.sh),
+       security_actions kaydi bu yuzden manager uzerinden (dual-homed)
+       ayrica yapiliyor. -->
+  <active-response>
+    <disabled>__ENFORCE_DISABLED__</disabled>
+    <command>soc-log-vpn-action</command>
+    <location>server</location>
+    <rules_group>soc_block_vpn</rules_group>
+  </active-response>
+
+  <!-- BONUS: Bağlantıyı kesmek yerine quarantine VLAN'a yönlendir.
+       manager her iki ağda da olduğu için (dmz_net + internal_net)
+       tamamen server-side çalışır, agent'a script dağıtmaya gerek yok. -->
+  <active-response>
+    <disabled>__QUARANTINE_DISABLED__</disabled>
+    <command>soc-quarantine</command>
+    <location>server</location>
+    <rules_group>soc_critical</rules_group>
+  </active-response>
+</ossec_config>

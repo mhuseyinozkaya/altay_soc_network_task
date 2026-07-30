@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   dmz_net:
     driver: bridge
@@ -20,12 +18,23 @@ services:
     build: ./vpn
     container_name: vpn-gateway
     env_file: .env
+    environment:
+      # DİKKAT: hostname değil, wazuh-manager'ın DMZ bacağının IP'si
+      # kullanılıyor. vpn-gateway'in internal_net çıkışı entrypoint.sh
+      # içindeki iptables kuralıyla sadece 192.168.101.10:1812/1813'e
+      # (FreeRADIUS) izin veriyor; "wazuh-manager" hostname'i internal_net
+      # IP'sine (192.168.101.15) çözülürse o trafik bu kural tarafından
+      # DROP edilir. DMZ bacağı (192.168.100.12) bu kısıtlamaya takılmaz.
+      WAZUH_MANAGER: 192.168.100.12
+      WAZUH_AGENT_NAME: vpn-gateway
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun
     ports:
       - "1194:1194/udp"
+    depends_on:
+      - wazuh-manager
     networks:
       dmz_net:
         ipv4_address: 192.168.100.10
@@ -41,15 +50,41 @@ services:
     ports:
       - "8080:80"
 
+  # ---------------- MONİTÖRLEME (DMZ + INTERNAL - Wazuh her iki bölgeyi de görmeli) ----------------
+  wazuh-manager:
+    build:
+      context: ./wazuh/manager
+      args:
+        WAZUH_REGISTRATION_PASSWORD: ${WAZUH_REGISTRATION_PASSWORD}
+        QUARANTINE_MODE: ${QUARANTINE_MODE:-block}   # "block" (zorunlu) ya da "quarantine" (bonus)
+    container_name: wazuh-manager
+    environment:
+      FASTAPI_INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    ports:
+      - "1515:1515"      # agent enrollment (authd)
+      - "1514:1514/udp"  # agent event akışı
+    networks:
+      dmz_net:
+        ipv4_address: 192.168.100.12
+      internal_net:
+        ipv4_address: 192.168.101.15
+
   # ---------------- INTERNAL ----------------
   freeradius:
     build: ./freeradius
     container_name: freeradius
+    cap_add:
+      - NET_ADMIN   # active-response iptables bloğu için gerekli
+    environment:
+      WAZUH_MANAGER: wazuh-manager   # internal_net'te tek bacak, hostname sorunsuz çözülür
+      WAZUH_AGENT_NAME: freeradius
+      FASTAPI_INTERNAL_TOKEN: ${INTERNAL_TOKEN}
     env_file: .env
-    command: ["freeradius", "-X"]   # GEÇİCİ: debug modu, test bitince kaldır (bkz. README Bölüm 6, madde 7)
     depends_on:
       fastapi:
         condition: service_healthy
+      wazuh-manager:
+        condition: service_started
     networks:
       internal_net:
         ipv4_address: 192.168.101.10
@@ -74,11 +109,18 @@ services:
     container_name: fastapi
     environment:
       DB_DSN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}               # wazuh-manager/freeradius ile AYNI olmalı
+      QUARANTINE_MODE: ${QUARANTINE_MODE:-block}      # "block" (zorunlu) ya da "quarantine" (bonus)
+      QUARANTINE_TTL_SECONDS: "600"
+      WAZUH_MANAGER: wazuh-manager
+      WAZUH_AGENT_NAME: fastapi
+    env_file: .env
     networks:
       internal_net:
         ipv4_address: 192.168.101.13
     depends_on:
       - postgres
       - redis
+      - wazuh-manager
     ports:
       - "8000:8000"   # sadece test/geliştirme amaçlı - internal_net normalde dışa kapalı

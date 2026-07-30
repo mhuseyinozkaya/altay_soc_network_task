@@ -10,26 +10,35 @@
 
 RADIUS_HOST="192.168.101.10"
 
-# Secrets container'ın ortam değişkenlerinden DEĞİL, entrypoint.sh'nin
-# yazdığı dosyadan okunuyor - OpenVPN'in client-connect subprocess'i
-# container'ın tam ortamını miras almıyor (bkz. entrypoint.sh).
-SECRETS_FILE="/etc/openvpn/radius-secrets.env"
-if [ -f "$SECRETS_FILE" ]; then
-    . "$SECRETS_FILE"
-fi
-
-: "${RADIUS_SHARED_SECRET:?RADIUS_SHARED_SECRET tanimli degil (secrets dosyasi bulunamadi - entrypoint.sh calismamis olabilir)}"
-: "${VPN_RADIUS_SERVICE_SECRET:?VPN_RADIUS_SERVICE_SECRET tanimli degil}"
-RADIUS_SECRET="$RADIUS_SHARED_SECRET"
-VPN_TEST_PASSWORD="$VPN_RADIUS_SERVICE_SECRET"
+# NOT: Bu iki değer bilinçli olarak hardcoded - OpenVPN'in --client-connect
+# script'ini çağırırken ana process'in (PID 1) tüm ortam değişkenlerini
+# aktarmadığı görüldü (script-security ile çalıştırılan harici programlara
+# yalnızca OpenVPN'in kendi ürettiği değişkenler garanti ediliyor, .env'den
+# gelen RADIUS_SHARED_SECRET/VPN_RADIUS_SERVICE_SECRET script'e ulaşmadı).
+# Bu değer freeradius/clients.conf'taki "secret" ile BİREBİR AYNI OLMALI
+# (RADIUS shared secret, iki taraf da eşleşmezse Access-Reject alınır).
+RADIUS_SECRET="changeme_shared_secret"   # freeradius/clients.conf ile aynı
+VPN_TEST_PASSWORD="changeme"             # freeradius/users ile aynı (lab/test)
 
 if [ -z "$common_name" ]; then
     echo "client-connect: common_name bulunamadi, reddediliyor"
     exit 1
 fi
 
-RESPONSE=$(printf "User-Name=%s,User-Password=%s,NAS-Identifier=vpn,Message-Authenticator=0x00" \
-    "$common_name" "$VPN_TEST_PASSWORD" \
+# YENİ: radclient çağrısını fiziksel olarak vpn-gateway container'ı yaptığı
+# için FreeRADIUS'un gördüğü kaynak IP her zaman vpn-gateway'in kendi IP'si
+# oluyordu - Wazuh'un "sadece bu VPN kullanıcısını blokla/karantinaya al"
+# diyebilmesi için gerçek istemci (tünel) IP'si gerekiyor.
+# ifconfig_pool_remote_ip, OpenVPN tarafından --client-connect script'ine
+# otomatik set edilen kendi değişkenlerinden biri (genel .env değişkenleri
+# gibi parent-process ortamından gelmiyor, bu yüzden RADIUS_SHARED_SECRET'te
+# yaşadığımız aktarım sorunundan etkilenmiyor).
+# Bu alan yalnızca loglanan/raporlanan IP'yi doğru hale getiriyor -
+# Access-Accept/Reject kararını ETKİLEMİYOR.
+CALLING_STATION_ID="${ifconfig_pool_remote_ip:-$common_name}"
+
+RESPONSE=$(printf "User-Name=%s,User-Password=%s,NAS-Identifier=vpn,Calling-Station-Id=%s,Message-Authenticator=0x00" \
+    "$common_name" "$VPN_TEST_PASSWORD" "$CALLING_STATION_ID" \
     | radclient -x "${RADIUS_HOST}:1812" auth "${RADIUS_SECRET}" 2>&1)
 
 echo "$RESPONSE" | grep -q "Access-Accept"

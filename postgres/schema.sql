@@ -1,7 +1,7 @@
 -- SOC görevi veritabanı şeması
 -- Policy Engine (FastAPI) ve Wazuh bu tabloları okuyup yazacak.
 
-CREATE TYPE access_profile AS ENUM ('admin', 'employee', 'guest');
+CREATE TYPE access_profile AS ENUM ('admin', 'employee', 'guest', 'quarantine');
 CREATE TYPE auth_method AS ENUM ('vpn', 'eap-tls');
 CREATE TYPE auth_result AS ENUM ('success', 'failure');
 

@@ -8,7 +8,9 @@ rest {
         # method: policy-soc'ta rest.authorize'dan önce control:Tmp-String-0'a
         # yazılıyor ("vpn" ya da "eap-tls"). cert_valid: post-auth'a
         # ulaşıldığı için kimlik zaten doğrulanmış demektir -> true.
-        data    = '{"username": "%{User-Name}", "method": "%{control:Tmp-String-0}", "source_ip": "%{Packet-Src-IP-Address}", "cert_valid": true, "cert_serial": "%{control:Tmp-String-1}"}'
+        # source_ip: Tmp-String-2 - VPN akışında gerçek istemci tünel IP'si
+        # (Calling-Station-Id), yoksa Packet-Src-IP-Address (bkz. policy-soc).
+        data    = '{"username": "%{User-Name}", "method": "%{control:Tmp-String-0}", "source_ip": "%{control:Tmp-String-2}", "cert_valid": true, "cert_serial": "%{control:Tmp-String-1}"}'
     }
 
     pool {

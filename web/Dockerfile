@@ -1,6 +1,6 @@
 FROM nginx:1.18-alpine
 
-RUN apk add --no-cache php7 php7-fpm findutils bash python3 libcap
+RUN apk add --no-cache php7 php7-fpm findutils bash python3 libcap ansible
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.php /var/www/html/index.php
